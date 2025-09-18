@@ -1,0 +1,172 @@
+---
+title: "IEA"
+author: "William F. Lamb"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(zoo)
+
+```
+
+
+``` {r compile_data}
+
+#data_iea <- read.csv("C:/Users/lamw/Documents/Data/IEA/worldbig.csv")
+
+# data_iea <- read.table("C:/Users/lamw/Documents/Data/IEA/WBAL/WORLDBAL.TXT")
+
+## elec heat
+
+data_iea <- read.csv("iea test/iea_balances_electricity.csv",sep = ";") %>% 
+  mutate(var="electricity")
+
+
+data_iea <- bind_rows(data_iea,
+                      read.csv("iea test/iea_balances_heat.csv",sep = ";") %>% 
+                        mutate(var="heat"))
+
+data_iea <- data_iea %>% 
+  gather(.,year,value,X1960:X2020)
+data_iea$year <- gsub("X","",data_iea$year)
+
+data_iea <- data_iea %>% 
+  mutate(year=as.numeric(year)) %>% 
+  mutate(value=as.numeric(value)) %>% 
+  rename(country=X,flow=TIME)
+
+data_iea$join <- gsub("^\\s+", "", data_iea$flow)
+
+order <- data_iea %>% 
+  ungroup() %>% 
+  filter(year==2019) %>% 
+  filter(country=="World") %>%
+  filter(var=="electricity") %>% 
+  mutate(order=1) %>%
+  mutate(order=cumsum(order)) %>%
+  select(join,order)
+
+countries <- data_iea %>% 
+  select(country) %>% 
+  distinct() %>% 
+  slice(2,12:159) %>% 
+  mutate(keep=1)
+
+data_iea <- data_iea %>%
+  filter(year==2019) %>% 
+  spread(var,value)
+
+
+### co2
+
+data_co2 <- read.csv("iea test/iea_co2_sectors.csv",sep=";") %>% 
+  mutate(var="co2")
+
+data_co2 <- bind_rows(data_co2,read.csv("iea test/iea_co2_sectors_indirect.csv",sep=";") %>% 
+                        mutate(var="co2_indirect"))
+
+data_co2 <- data_co2 %>% 
+  gather(.,year,value,X1990:X2019)
+data_co2$year <- gsub("X","",data_co2$year)
+data_co2 <- data_co2 %>% 
+  mutate(year=as.numeric(year)) %>% 
+  mutate(value=as.numeric(value)) %>% 
+  rename(country=X,flow=TIME) %>% 
+  filter(year==2019) %>% 
+  spread(var,value)
+
+data_co2$join <- gsub("^\\s+", "", data_co2$flow)
+
+data_co2 <- data_co2 %>% 
+  mutate(join=ifelse(join=="Paper, pulp and print","Paper, pulp and printing",join)) %>% 
+  mutate(join=ifelse(join=="Other energy industry own use","Energy industry own use",join))
+
+
+data <- left_join(data_iea,data_co2 %>% select(-flow))
+data <- left_join(data,order)
+data <- left_join(data,countries)
+
+############################
+# calculate elec heat of each country and sector
+# divide by total final consumption
+# multiply it by the power sector emissions of each country
+
+data <- data %>% 
+  filter(keep==1) %>% 
+  arrange(country,order) %>% 
+  select(-keep)
+
+data <- data %>% 
+  rowwise() %>%
+  mutate(elecheat = sum(electricity, heat, na.rm = TRUE)) %>%
+  ungroup()
+
+tfec <- data %>% 
+  filter(join %in% c("Total final consumption","Energy industry own use","Losses")) %>%
+  spread(.,join,elecheat) %>% 
+  select(country,`Total final consumption`,`Energy industry own use`,`Losses`) %>%
+  group_by(country) %>%
+  mutate(across(everything(), ~na.locf(., na.rm = FALSE))) %>%
+  mutate(across(everything(), ~na.locf(., na.rm = FALSE,fromLast = TRUE))) %>%
+  ungroup() %>% 
+  distinct()
+
+data <- left_join(data,tfec)
+
+data <- data %>% 
+  left_join(.,data_co2 %>% filter(join=="Electricity and heat production") %>% select(country,co2_elecheat=co2)) %>% 
+  left_join(.,data_co2 %>% filter(join=="Energy industry own use") %>% select(country,co2_eneown=co2)) %>% 
+  left_join(.,data_co2 %>% filter(join=="CO2 emissions from fuel combustion") %>% select(country,co2_total=co2))
+
+
+
+blarg <- data %>% 
+  filter(country=="People's Republic of China")
+openxlsx::write.xlsx(blarg,"blarg.xlsx")
+
+
+
+test <- test %>% 
+  mutate(my_co2_indirect=ratio*(co2_elecheat-co2_oth)) %>% 
+  rowwise() %>%
+  mutate(my_co2_indirect = sum(my_co2_indirect,co2_direct, na.rm = TRUE)) %>%
+  ungroup()
+
+#### sum up numbers no double counting
+
+sectors <- test %>% 
+  select(flow,join,order) %>% distinct() %>% 
+  slice(28:69) %>% 
+  slice(1,5,6,8:19,28:32) %>% 
+  mutate(keep=1) %>% 
+  select(join,keep)
+
+
+test <- left_join(test,sectors) %>% 
+  filter(keep==1)
+
+
+blarg <- test %>% filter(country=="People's Republic of China")
+#blarg <- test %>% filter(country=="United States")
+
+totals <- test %>% 
+  group_by(year) %>% 
+  summarise_at(vars(elecheat,co2_direct,co2_indirect,my_co2_indirect),sum,na.rm=T)
+
+world_elecheat <- world_elecheat %>% 
+  left_join(.,order) %>% 
+  spread(.,var,value) %>% 
+  arrange(order) %>% 
+  rowwise() %>%
+  mutate(elecheat = sum(electricity, heat, na.rm = TRUE)) %>%
+  ungroup()
+
+world_co2 <- world_co2 %>% 
+  left_join(.,order) %>% 
+  spread(.,var,value)
+
+```

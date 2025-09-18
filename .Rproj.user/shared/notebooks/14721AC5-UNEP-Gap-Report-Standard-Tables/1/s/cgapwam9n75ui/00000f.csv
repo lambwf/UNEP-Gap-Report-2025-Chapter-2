@@ -1,0 +1,9 @@
+"0",""
+"0","## Get population data from the World Bank"
+"0",""
+"0","data_wdi_pop <- WDI(country = ""all"",indicator = ""SP.POP.TOTL"",start = 1970,end = 2024,extra=TRUE,language = ""en"") %>%"
+"0","  select(iso3c, country, year, SP.POP.TOTL) %>%"
+"0","  filter(!is.na(iso3c))"
+"2","G2;H2;Warningh in open.connection(con, ""rb"") :
+  cannot open URL 'https://api.worldbank.org/v2/en/country/all/indicator/SP.POP.TOTL?format=json&date=1970:2024&per_page=32500&page=1': HTTP status was '502 Bad Gateway'g
+"

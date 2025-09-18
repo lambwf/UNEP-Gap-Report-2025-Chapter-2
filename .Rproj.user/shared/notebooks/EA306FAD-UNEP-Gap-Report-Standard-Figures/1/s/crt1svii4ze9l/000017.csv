@@ -1,0 +1,8 @@
+"0",""
+"0",""
+"0",""
+"0","ggsave(plot,filename = ""UNEP-EGR-2025-annex1-trend-gas.png"",path = ""results/standard/"",device = ""png"",height = 5,width=9,dpi=300)"
+"0","ggsave(plot,filename = ""UNEP-EGR-2025-annex1-trend-gas.pdf"",path = ""results/standard/"",device = cairo_pdf,height = 5,width=9)"
+"0","ggsave(plot,filename = ""UNEP-EGR-2025-annex1-trend-gas.svg"",path = ""results/standard/"",device = 'svg',height = 5,width=9)"
+"0",""
+"0",""

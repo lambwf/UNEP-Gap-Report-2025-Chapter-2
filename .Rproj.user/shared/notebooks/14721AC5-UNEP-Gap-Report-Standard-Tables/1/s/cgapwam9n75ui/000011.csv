@@ -1,0 +1,11 @@
+"2","G1;Fehler in WDI(country = ""all"", indicator = ""SP.POP.TOTL"", start = 1970,  : 
+  The following indicators could not be downloaded: SP.POP.TOTL.
+
+Please make sure that you are running the latest version of the `WDI` package, and that the arguments you are using in the `WDI()` function are valid.
+
+Sometimes, downloads will suddenly stop working, even if nothing has changed in the R code of the WDI package. (""The same WDI package version worked yesterday!"") In those cases, the problem is almost certainly related to the World Bank servers or to your internet connection.
+
+You can check if the World Bank web API is currently serving the indicator(s) of interest by typing a URL of this form in your web browser:
+
+https://api.worldbank.org/v2/en/country/all/indicator/SP.POP.TOTL?format=json&date=:&per_page=32500&page=1
+g"
