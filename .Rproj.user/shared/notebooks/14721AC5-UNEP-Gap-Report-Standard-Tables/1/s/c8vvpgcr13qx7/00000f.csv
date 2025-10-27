@@ -146,8 +146,8 @@
 "0","data_total <- data_total %>% "
 "0","  spread(year,value) %>% "
 "0","  left_join(.,data_total_change)"
-"2","[38;5;232mJoining with `by = join_by(gas)`[39m
-"
+"0",""
+"0",""
 "0","# Add a blank row to separate values not in the total (inventory LULUCF and CO2 excl. carbonation)"
 "0",""
 "0","data_total <- rbind(data_total %>%"
@@ -208,8 +208,9 @@
 "0","data_sectors <- data_sectors %>% "
 "0","  spread(year,value) %>% "
 "0","  left_join(.,data_sectors_change)"
-"2","[38;5;232mJoining with `by = join_by(sector_lv1, sector_lv2, sector_lv3)`[39m
-"
+"0",""
+"0",""
+"0",""
 "0","# Write to excel file"
 "0",""
 "0","addWorksheet(wb,""total_by_sector"")"

@@ -38,6 +38,11 @@ cc_LDC <- read.csv("https://raw.githubusercontent.com/openclimatedata/countrygro
   select(iso=Code) %>% 
   mutate(LDC=1)
 
+cc_G20<- read.csv("https://raw.githubusercontent.com/openclimatedata/countrygroups/refs/heads/main/data/g20.csv") %>% 
+  select(iso=Code) %>% 
+  add_row(iso="EU27") %>% 
+  mutate(G20=1)
+
 
 ## Get population data from the World Bank
 
@@ -97,6 +102,14 @@ colours_top6 <- c("Russia" = "#ff9055ff",
                   "Indonesia" = "#7dd396ff",
                   "India" = "#d45087ff",
                   "World" = "#818181ff")
+
+
+## adjust country names
+data_edgar$country <- gsub("Turkey","Türkiye",data_edgar$country)
+data_gcb_co2_ffi$country <- gsub("Turkey","Türkiye",data_gcb_co2_ffi$country)
+data_gcb_luc$country <- gsub("Turkey","Türkiye",data_gcb_luc$country)
+data_wdi_pop$country <- gsub("Turkey","Türkiye",data_wdi_pop$country)
+
 
 
 
@@ -523,7 +536,8 @@ data_luc_diff <- load_gcb_countries_luc(
 
 ## Add the inventory LULUCF and join
 
-data_luc_inv <- read.csv("sources/not public/timeseries_JRC.csv") %>% 
+#data_luc_inv <- read.csv("sources/not public/timeseries_JRC.csv") %>% 
+data_luc_inv <- read.csv("sources/timeseries_NGHGI_3.0.csv") %>% 
   filter(ISO3=="WRD",Category=="LULUCF",Version=="V3.0 (NGHGI 2025)") %>% 
   rename(year=Year,value=CFluxes_yr) %>% 
   group_by(year) %>% 
@@ -2356,6 +2370,242 @@ saveWorkbook(wb,paste0("results/standard/UNEP-EGR-2025-top-contribution-annual.x
 
 ```
 
+### Contribution to total annual change, with G20
+
+``` {r top6_contribution_annual,fig.height=4,fig.width=8}
+
+
+## Aggregate emissions
+
+data_contribution <- data_edgar %>% 
+  group_by(iso,country,year) %>% 
+  summarise(value=sum(value,na.rm=T)/1e6) %>% 
+  filter(year %in% c(max(data_edgar$year),max(data_edgar$year)-1))
+
+
+## Aggregate EU
+
+data_contribution_eu <- data_contribution %>% 
+  left_join(.,cc_EU,by="iso") %>% 
+  filter(!is.na(EU)) %>% 
+  mutate(iso="EU27",country="European Union") %>% 
+  group_by(iso,country,year) %>% 
+  summarise(value=sum(value))
+
+data_contribution <- data_contribution %>% 
+  left_join(.,cc_EU,by="iso") %>% 
+  filter(is.na(EU)) %>% 
+  rbind(.,data_contribution_eu) %>% 
+  select(-EU)
+
+
+## Aggregate intl. transport
+
+data_contribution <- data_contribution %>%
+  mutate(iso=ifelse(iso=="AIR","AIRSEA",iso)) %>%
+  mutate(iso=ifelse(iso=="SEA","AIRSEA",iso)) %>%
+  mutate(country=ifelse(country=="Intl. Aviation","Intl. Transport",country)) %>%
+  mutate(country=ifelse(country=="Intl. Shipping","Intl. Transport",country)) %>%
+  group_by(iso,country,year) %>%
+  summarise(value=sum(value,na.rm=T))
+
+
+## Join land use change
+
+data_contribution_luc <- data_gcb_luc %>% 
+  filter(country=="Global") %>% 
+  mutate(value=value/1e6)
+
+# Add the GCB projection and join
+
+data_contribution_luc <- data_contribution_luc %>% 
+  add_row(year=2024,value=gcb_luc_projection*1000) %>% 
+  mutate(iso="LUC",country="Land use change (LULUCF)") %>% 
+  filter(year %in% c(max(data_edgar$year),max(data_edgar$year)-1))
+
+data_contribution <- rbind(data_contribution,data_contribution_luc)
+
+
+## Include top6 by current emissions + transport + luc and aggregate rest of world
+
+countries <- data_contribution %>% 
+  filter(year==2024) %>% 
+  arrange(desc(value)) %>% 
+  head(8) %>% 
+  mutate(TOP=1) %>% 
+  select(iso,TOP)
+
+data_contribution <- data_contribution %>% 
+  left_join(.,countries) %>% 
+  left_join(.,cc_G20) %>% 
+  mutate(iso=ifelse(is.na(TOP) & G20==1,"RESTG20",iso)) %>% 
+  mutate(iso=ifelse(is.na(TOP) & is.na(G20),"REST",iso)) %>% 
+  mutate(country=ifelse(iso=="REST","Rest of World",country)) %>%
+  mutate(country=ifelse(iso=="RESTG20","Rest of G20",country)) %>% 
+  group_by(iso,country,year) %>% 
+  summarise(value=sum(value,na.rm=T))
+
+
+## Calculate changes and rank
+
+data_contribution <- data_contribution %>% 
+  group_by(iso) %>% 
+  mutate(change_abs=last(value)-first(value))
+
+
+# Re-arrange order of countries so that net additions come first, net reductions last
+
+data_contribution_order <- data_contribution %>% 
+  ungroup() %>% 
+  filter(year==max(data_contribution$year)) %>% 
+  mutate(change_abs=ifelse(iso=="REST",0,change_abs)) %>% 
+  arrange(desc(change_abs)) %>% 
+  mutate(order=row_number()) %>% 
+  select(iso,order)
+
+data_contribution <- left_join(data_contribution,data_contribution_order,by=join_by(iso)) %>% 
+  arrange(order,year)
+
+
+## Get totals
+
+data_contribution_tot <- data_contribution %>% 
+  group_by(year) %>% 
+  summarise(value=sum(value,na.rm=T)) %>% 
+  mutate(label=paste0("Emissions in ",year,": ",signif(value,3)))
+
+
+## Arrange data for waterfall
+
+data_contribution <- data_contribution  %>% 
+  ungroup() %>% 
+  filter(year==max(data_contribution$year)-1) %>%
+  add_row(order=0,change_abs=data_contribution_tot$value[1]) %>% 
+  arrange(order) %>% 
+  ungroup() %>%
+  mutate(end = cumsum(change_abs),
+         start = c(0, head(end, -1))) %>% 
+  filter(order!=0)
+
+
+## Adjust factors and labels
+
+data_contribution$country <- gsub("\\| ","",data_contribution$country)
+data_contribution$country <- as.factor(data_contribution$country)
+data_contribution$country <- fct_reorder(data_contribution$country,data_contribution$order)
+
+data_contribution <- data_contribution %>%
+  mutate(labels=signif(change_abs,3)) %>% 
+  mutate(labels=ifelse(labels>0,paste0("+",labels),labels))
+
+
+## Plot
+
+p1 <- data_contribution %>%
+  ggplot(aes(fill = country)) +
+  ggpattern::geom_rect_pattern(
+    aes(
+      xmin = order - 0.2,
+      xmax = order + 0.2,
+      ymin = end,
+      ymax = start,
+      pattern = ifelse(iso == "LUC", "crosshatch", "none")
+    ),
+    color = "#252525",
+    linewidth = 0.25,
+    pattern_fill = "#252525",
+    pattern_density = 0.1,
+    pattern_spacing = 0.035,
+    pattern_size = 0.12
+  ) +
+  geom_segment(data=data_contribution %>% filter(order!=max(data_contribution$order)),
+               aes(x = order + 0.2, xend = order + 0.8,y = end, yend = end),
+               color = "#252525",linewidth=0.25) +
+  
+  coord_cartesian(ylim=c(56000,58000))+
+  scale_fill_manual(values=c(colours_top6,"Rest of World"="#9467bdff","Land use change (LULUCF)"="#4f8455ff","Intl. Transport"="#818181ff")) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10),expand = expansion(mult = c(0.05, 0.05))) +
+  scale_y_continuous(breaks=data_contribution_tot$value) +
+  theme_wl() +
+  theme(legend.position="none",
+        axis.title = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.text.x = element_text(vjust = 1),
+        plot.title = element_text(margin=margin(t=15)),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+  labs(title="Contributions to the change in 2024 greenhouse gas emissions",
+       subtitle=bquote(paste("MtCO"[2], "e/year")),
+       caption="⌂ UNEP Emissions Gap Report 2025    ⌂ Data: EDGAR v10, GCB 2024 \n⌂ Note: GWP100 AR6; Stippled land use change area refers to the global total (bookkeeping convention).") +
+  coord_cartesian(clip = "off")
+
+
+y_range_scaling <- layer_scales(p1)$y$range$range
+y_range_scaling <- diff(y_range_scaling) * 0.08
+
+
+p1 <- p1 +
+  geom_text(aes(x=country,y=ifelse(change_abs>0,end+y_range_scaling,end+y_range_scaling-change_abs),label=labels),
+            color="#636363",
+            size=3.5)
+
+y_range_scaling_2 <- layer_scales(p1)$y$range$range
+y_range_expanded <- y_range_scaling_2 + c(-0.001 * diff(y_range_scaling_2),0.001 * diff(y_range_scaling_2))
+
+p2 <- data_contribution_tot %>%
+  filter(year==data_contribution_tot$year[2]) %>% 
+  ggplot(.,aes(x=1.5,y=value,label=str_wrap(label,15))) +
+  geom_text(size=3.5,colour="#636363",hjust=0) +
+  geom_segment(aes(x = 1.4, xend = 1, yend = value),
+               arrow = arrow(length = unit(0.2, "cm")),
+               colour = "#636363") +
+  scale_y_continuous(limits = y_range_expanded) +
+  scale_x_continuous(limits = c(1,4.5),expand = expansion(mult = c(0, 0.05))) +
+  theme_wl_empty() +
+  coord_cartesian(clip = "off")
+
+p3 <- data_contribution_tot %>%
+  filter(year==data_contribution_tot$year[1]) %>% 
+  ggplot(.,aes(x=4,y=value,label=str_wrap(label,15))) +
+  geom_text(size=3.5,colour="#636363",hjust=1) +
+  geom_segment(aes(x = 4.1, xend = 4.5, yend = value),
+               arrow = arrow(length = unit(0.2, "cm")),
+               colour = "#636363") +
+  scale_y_continuous(limits = y_range_expanded) +
+  scale_x_continuous(limits = c(1,4.5),expand = expansion(mult = c(0.05, 0))) +
+  theme_wl_empty() +
+  coord_cartesian(clip = "off")
+
+
+plot <- plot_spacer() + p3 + plot_spacer() + p1 + plot_spacer() + p2 + plot_layout(widths=c(-0.26,1,-0.26,6,-0.26,1))
+plot
+
+
+ggsave(plot,filename = "UNEP-EGR-2025-top-G20-contribution-annual.png",path = "results/standard/",device = "png",height = 4,width=8,dpi=300)
+ggsave(plot,filename = "UNEP-EGR-2025-top-G20-contribution-annual.pdf",path = "results/standard/",device = cairo_pdf,height = 4,width=8)
+ggsave(plot,filename = "UNEP-EGR-2025-top-G20-contribution-annual.svg",path = "results/standard/",device = 'svg',height = 4,width=8)
+
+
+## Save data
+
+wb <- createWorkbook()
+addWorksheet(wb,"info")
+addWorksheet(wb,"data")
+addWorksheet(wb,"axes")
+info = data.frame(a=c("Author","Contact","Data sources","See also"),
+                  b=c("William F. Lamb",
+                      "william.lamb@pik-potsdam.de",paste0(ref_edgar,"; ",ref_gcb),ref_lamb))
+
+writeData(wb, sheet = "info",info,colNames = F, rowNames = F)
+writeData(wb, sheet = "data",data_contribution %>% filter(!is.na(iso)) %>% select(iso,country,change_abs) %>% mutate(units="MtCO2e"),colNames = T, rowNames = F)
+writeData(wb, sheet = "axes",data_contribution_tot %>% mutate(units="MtCO2e"),colNames = T, rowNames = F)
+
+
+saveWorkbook(wb,paste0("results/standard/UNEP-EGR-2025-top-G20-contribution-annual.xlsx"),overwrite=T)
+
+
+```
+
 
 ### Contribution to total decadal change
 
@@ -3120,66 +3370,6 @@ ggsave(plot,filename = "UNEP-EGR-2025-annex1-trend-gas.svg",path = "results/stan
 
 ## Country plots
 
-### G20 distribution of emissions
-
-```{r g20_distribution_emissions, fig.height = 6, fig.width = 8}
-
-
-## Aggregate emissions
-
-data_countries <- data_edgar %>% 
-  group_by(iso,country,sector_lv2,sector_lv2_order,year) %>% 
-  summarise(value=sum(value,na.rm=T)/1e6) %>% 
-  filter(year==2023)
-
-
-# Join inventory LULUCF emissions
-# 
-# data_countries <- rbind(data_countries,data_inv_luc %>% filter(year==2023))
-# 
-# data_countries <- data_countries %>% 
-#   ungroup() %>% 
-#   arrange(iso,year) %>% 
-#   mutate(country=na.locf(country))
-
-
-# Filter G20
-
-data_countries <- data_countries %>%
-  left_join(.,read.csv("https://raw.githubusercontent.com/openclimatedata/countrygroups/main/data/g20.csv") %>%
-              
-              select(iso=Code) %>% 
-              mutate(G20="1") %>% 
-              mutate(G20=ifelse(iso=="IRL",1,G20))) %>% 
-  filter(G20==1)
-
-
-# calculate shares
-
-data_countries <- data_countries %>% 
-  group_by(iso) %>% 
-  mutate(total=sum(value,na.rm=T))
-
-data_countries <- data_countries %>% 
-  mutate(share=value/total)
-
-
-
-## plot
-
-plot <- data_countries %>%
-  ggplot(.,aes(x=share,y=country,fill=sector_lv2)) +
-  geom_col(colour='#636363') +
-  scale_fill_manual(values=c(colours_9_sectors)) +
-  theme_wl()
-  
-plot
-ggsave(plot,filename = "g20_emissions_distribution.png",
-         path = "results/standard/",device = "png",height = 6,width=8,dpi=300)
-  
-  
-```
-
 ### Trend by sector
 
 ``` {r countries_trend, fig.height=4, fig.width=8}
@@ -3252,6 +3442,12 @@ data_countries <- data_countries %>%
   arrange(iso,country,sector_lv2,year)
 
 ##
+
+data_countries <- data_countries %>% 
+  mutate(country=ifelse(iso=="RUS","Russian Federation",country)) %>% 
+  mutate(country=ifelse(iso=="USA","United States of America",country)) %>% 
+  mutate(country=ifelse(iso=="KOR","Republic of Korea",country))
+
 
 plot_country <- function(countries,data_countries) {
   
@@ -3432,6 +3628,11 @@ data_countries_change <- rbind(data_countries_change,data_countries_eu)
 
 countries <- "United Kingdom"; t=1
 ## Plot
+
+data_countries_change <- data_countries_change %>% 
+  mutate(country=ifelse(iso=="RUS","Russian Federation",country)) %>% 
+  mutate(country=ifelse(iso=="USA","United States of America",country)) %>% 
+  mutate(country=ifelse(iso=="KOR","Republic of Korea",country))
 
 plot_country_change <- function(countries,t,data_countries_change) {
   
