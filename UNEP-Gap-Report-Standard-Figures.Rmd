@@ -325,6 +325,8 @@ data_uncertainties$gas <- fct_relevel(data_uncertainties$gas,
                                       "F-gases","N2O","CH4","CO2 LULUCF",
                                       "CO2 Fossil","Total")
 
+
+
 ## Plot
 
 plot <- data_uncertainties %>% ggplot(.,aes(x=value,y=gas,fill=gas,label=label)) +
@@ -335,6 +337,15 @@ plot <- data_uncertainties %>% ggplot(.,aes(x=value,y=gas,fill=gas,label=label))
   theme_wl() +
   scale_fill_manual(values=colours_gases) +
   scale_x_continuous(breaks=c(0,10,20,30,40,50,60),expand = expansion(mult = c(0.05, 0.15))) +
+  scale_y_discrete(
+    labels = c(
+      expression("F-gases"),
+      expression(N[2]*O),
+      expression(CH[4]),
+      expression(CO[2]~"LULUCF"),
+      expression(CO[2]~"Fossil"),
+      expression("Total")
+    )) +
   theme(legend.position = "none",
         axis.title = element_blank(),
         panel.grid.major.y = element_blank(),
@@ -377,7 +388,11 @@ saveWorkbook(wb,paste0("results/standard/UNEP-EGR-2025-total-uncertainties.xlsx"
 
 data_sectors <- data_edgar %>% 
   group_by(year,sector_lv2,sector_lv2_order) %>% 
-  summarise(value=sum(value,na.rm=T)/1e9)
+  summarise(value=sum(value,na.rm=T)/1e9) #%>% 
+  #mutate(sector_lv2 = recode(sector_lv2,"Energy | Buildings & other" = "Energy | Buildings and other"))
+
+#colours_9_sectors <- c(colours_9_sectors,"Energy | Buildings and other"="#74a6d4ff","LULUCF"="#7dd396ff")
+
 
 data_sectors_luc <- data_gcb_luc %>% 
   filter(country=="Global") %>% 
@@ -395,7 +410,8 @@ data_sectors_luc <- data_sectors_luc %>%
   select(-iso,-country)
 
 data_sectors <- rbind(data_sectors,data_sectors_luc) %>% 
-  filter(year>=1990)
+  filter(year>=1990) # %>%
+#  mutate(sector_lv2 = recode(sector_lv2,"Land use change (LULUCF)" = "LULUCF"))
 
 
 ## Arrange levels
@@ -475,7 +491,7 @@ p1 <- data_sectors %>% ggplot(.,aes(x=year,y=value,fill=sector_lv2)) +
 p2 <- data_sectors_change %>% 
   ggplot(.,aes(x=1,y=label_position,label=label,color=sector_lv2)) +
   geom_text(size=3.5,hjust=0) +
-  annotation_custom(grob = textGrob("Emissions in 2024,\n1 year change:",
+  annotation_custom(grob = textGrob("Emissions in 2024,\n1-year change:",
                                     x = unit(0, "npc"), y = unit(0.88, "npc"),hjust = 0, vjust = 0,
                                     gp = gpar(col = "#636363", fontsize = 10, lineheight=0.9)),
                     xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
@@ -819,7 +835,7 @@ p2 <- data_fossil_change %>%
     min.segment.length = Inf,
     box.padding = 0.2,
     force = 0.1) +
-  annotation_custom(grob = textGrob("Emissions in 2024,\n1 year change:",
+  annotation_custom(grob = textGrob("Emissions in 2024,\n1-year change:",
                                     x = unit(0.03, "npc"), y = unit(0.88, "npc"),hjust = 0, vjust = 0,
                                     gp = gpar(col = "#636363", fontsize = 10, lineheight=0.9)),
                     xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
@@ -1332,6 +1348,10 @@ data_top_shares <- data_edgar %>%
   group_by(iso,country,year) %>% 
   summarise(value=sum(value,na.rm=TRUE))
 
+##
+data_top_shares <- data_top_shares %>% 
+  mutate(country=ifelse(country=="Russia","Russian Federation",country)) %>% 
+  mutate(country=ifelse(country=="United States","United States of America",country))
 
 ## Join land use change (LULUCF) emissions from GCB
 
@@ -1383,9 +1403,20 @@ data_top_shares <- left_join(data_top_shares,cc_LDC,by="iso") %>%
 ## Get high emitters + LDCs
 
 data_top_shares <- data_top_shares %>% 
-  mutate(group=ifelse(country %in% c(high_emitters,"Least Developed Countries"),country,"Rest of World")) %>% 
+  #mutate(group=ifelse(country %in% c(high_emitters,"Least Developed Countries"),country,"Rest of World")) %>% 
+  mutate(group=ifelse(country %in% c(high_emitters,"Least Developed Countries","Russian Federation","United States of America"),country,"Rest of World")) %>% 
   group_by(group,year) %>% 
   summarise(value=sum(value,na.rm=TRUE))
+
+
+colours_top6 <- c("Russian Federation" = "#ff9055ff", 
+                  "United States of America" = "#659cccff",
+                  "China" = "#e5b82cff",
+                  "European Union" = "#17becfff",
+                  "Brazil" = "#7dd396ff",
+                  "Indonesia" = "#7dd396ff",
+                  "India" = "#d45087ff",
+                  "World" = "#818181ff")
 
 
 ## Arrange factor levels
@@ -1505,6 +1536,11 @@ data_top_shares <- data_edgar %>%
   group_by(iso,country,year) %>% 
   summarise(value=sum(value,na.rm=TRUE))
 
+##
+data_top_shares <- data_top_shares %>% 
+  mutate(country=ifelse(country=="Russia","Russian Federation",country)) %>% 
+  mutate(country=ifelse(country=="United States","United States of America",country))
+
 
 ## Join EU
 
@@ -1543,9 +1579,20 @@ data_top_shares <- left_join(data_top_shares,cc_LDC,by="iso") %>%
 ## Get high emitters + LDCs
 
 data_top_shares <- data_top_shares %>% 
-  mutate(group=ifelse(country %in% c(high_emitters,"Least Developed Countries"),country,"Rest of World")) %>% 
+  #mutate(group=ifelse(country %in% c(high_emitters,"Least Developed Countries"),country,"Rest of World")) %>% 
+  mutate(group=ifelse(country %in% c(high_emitters,"Least Developed Countries","Russian Federation","United States of America"),country,"Rest of World")) %>% 
   group_by(group,year) %>% 
   summarise(value=sum(value,na.rm=TRUE))
+
+
+colours_top6 <- c("Russian Federation" = "#ff9055ff", 
+                  "United States of America" = "#659cccff",
+                  "China" = "#e5b82cff",
+                  "European Union" = "#17becfff",
+                  "Brazil" = "#7dd396ff",
+                  "Indonesia" = "#7dd396ff",
+                  "India" = "#d45087ff",
+                  "World" = "#818181ff")
 
 
 ## Arrange factor levels
@@ -1966,6 +2013,14 @@ data_top_shares <- data_gcb_co2_ffi %>%
   group_by(iso,country,year) %>% 
   summarise(value_ffi=sum(value,na.rm=TRUE))
 
+##
+data_top_shares <- data_top_shares %>% 
+  mutate(country=ifelse(country=="Russia","Russian Federation",country)) %>% 
+  mutate(country=ifelse(country=="United States","United States of America",country))
+
+
+high_emitters <- c(high_emitters,"European Union", "World","Russian Federation","United States of America")
+
 
 ## Join land use change (LULUCF) emissions from GCB
 
@@ -2029,7 +2084,7 @@ data_top_shares <- data_top_shares %>%
 ## Get high emitters + LDCs
 
 data_top_shares <- data_top_shares %>% 
-  mutate(group=ifelse(country %in% c(high_emitters,"Least Developed Countries"),country,"Rest of World")) %>% 
+  mutate(group=ifelse(country %in% c(high_emitters,"Least Developed Countries"),country,"Rest of world")) %>% 
   group_by(group,year) %>% 
   summarise(cumulative_value_tot=sum(cumulative_value_tot,na.rm=TRUE))
 
@@ -2047,7 +2102,7 @@ data_top_shares <- left_join(data_top_shares,rank %>% select(group,rank))
 
 data_top_shares$group <- as.factor(data_top_shares$group)
 data_top_shares$group <- fct_reorder(data_top_shares$group,data_top_shares$rank)
-data_top_shares$group <- fct_relevel(data_top_shares$group,"Rest of World",after=Inf)
+data_top_shares$group <- fct_relevel(data_top_shares$group,"Rest of world",after=Inf)
 data_top_shares$group <- fct_relevel(data_top_shares$group,"Least Developed Countries",after=Inf)
 
 data_top_shares <- data_top_shares %>% arrange(group)
@@ -2103,7 +2158,7 @@ p2 <- labels %>%
     force = 0.1,
     lineheight=0.9) +
   annotation_custom(grob = textGrob(paste0("Share in ",max_year-1,":"),
-                                    x = unit(0.03, "npc"), y = unit(0.91, "npc"),hjust = 0, vjust = 0,
+                                    x = unit(0.03, "npc"), y = unit(0.95, "npc"),hjust = 0, vjust = 0,
                                     gp = gpar(col = "#636363", fontsize = 10, lineheight=0.9)),
                     xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
   scale_colour_manual(values=c(colours_top6,"Rest of world" = "#818181ff","Least Developed Countries"="#9467bdff",
@@ -3380,7 +3435,9 @@ data_countries <- data_edgar %>%
   group_by(iso,country,sector_lv2,sector_lv2_order,year) %>% 
   summarise(value=sum(value,na.rm=T)/1e6) %>% 
   filter(year>=1990) %>% 
-  mutate(gapfilled="no")
+  mutate(gapfilled="no") 
+
+#colours_9_sectors <- c(colours_9_sectors,"Energy | Buildings and other"="#74a6d4ff","LULUCF"="#7dd396ff")
 
 
 # Gather LUC inventory data
@@ -3439,7 +3496,9 @@ data_countries$sector_lv2 <- as.factor(data_countries$sector_lv2)
 data_countries$sector_lv2 <- fct_reorder(data_countries$sector_lv2,data_countries$sector_lv2_order)
 
 data_countries <- data_countries %>% 
-  arrange(iso,country,sector_lv2,year)
+  arrange(iso,country,sector_lv2,year) %>%
+  mutate(sector_lv2 = recode(sector_lv2,"Land use change (LULUCF)" = "LULUCF")) %>% 
+  mutate(sector_lv2 = recode(sector_lv2,"Energy | Buildings & other" = "Energy | Buildings and other"))
 
 ##
 
@@ -3455,7 +3514,8 @@ plot_country <- function(countries,data_countries) {
     filter(country==countries)
   
   totals <- data_countries %>% 
-    filter(sector_lv2!="Land use change (LULUCF)") %>% 
+    #filter(sector_lv2!="Land use change (LULUCF)") %>% 
+    filter(sector_lv2!="LULUCF") %>% 
     group_by(year) %>% 
     summarise(value=sum(value,na.rm=T)) %>% 
     filter(year >= max(data_countries$year)-3) %>%
@@ -3517,7 +3577,7 @@ plot_country <- function(countries,data_countries) {
           legend.position = "none") +
     labs(title=countries,
          subtitle=bquote(paste("MtCO"[2], "e/year")),
-         caption="⌂ UNEP Emissions Gap Report 2025    ⌂ Data: EDGAR v10, Grassi et al. 2025  \n⌂ Note: GWP100 AR6; net land use change (LULUCF) emissions based on inventories. \n⌂ Note: Hatched land use change estimates indicate projections where estimates are not yet available.") +
+         caption="⌂ UNEP Emissions Gap Report 2025    ⌂ Data: EDGAR v10, Grassi et al. (2025)  \n⌂ Note: GWP100 AR6; net land use change (LULUCF) emissions based on inventories. \n⌂ Note: Hatched land use change estimates indicate projections where estimates are not yet available.") +
     guides(pattern = "none")
   
   legend_plot <- ggplot(data_countries, aes(x = year, y = value, fill = sector_lv2)) +

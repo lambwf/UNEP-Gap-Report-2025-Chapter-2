@@ -414,8 +414,8 @@ data_total_luc <- data_total_luc %>%
   mutate(gas="CO2 LULUCF") %>% 
   select(-iso,-country)
 
-# data_total <- rbind(data_total,data_total_luc) %>% 
-#   filter(year>=1990)
+data_total <- rbind(data_total,data_total_luc) %>% 
+  filter(year>=1990)
 
 
 # aggregate
@@ -442,6 +442,14 @@ data_total <- data_total %>%
   mutate(change=round(change,1))
 
 
+data_total <- data_total %>% 
+  mutate(cut=ifelse(year>=2006 & year <=2015,"2006-2015",NA)) %>% 
+  mutate(cut=ifelse(year>=2016 & year <=2025,"2016-2025",cut)) %>% 
+  filter(!is.na(cut)) %>% 
+  group_by(cut) %>% 
+  mutate(change=growth_rate(year,value)$rate) %>% 
+  mutate(change=change*100) %>% 
+  mutate(change=round(change,1))
 
 ```
 
